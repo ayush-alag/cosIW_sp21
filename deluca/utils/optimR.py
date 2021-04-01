@@ -48,7 +48,7 @@ class optimROBD(Object):
     def constraint(omega_t):
         def func(params):
             y, v = params
-            if v in omega_t: #TODO: flesh out based on omega_t structure
+            if tuple(v) in omega_t:
                 return 0
             return .1 #return a non-zero element
         return func

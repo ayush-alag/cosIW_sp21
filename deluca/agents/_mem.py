@@ -92,7 +92,8 @@ def getOmega(W, p, Cs, etas, t, d):
         for i in range(1, p+1):
             littleS += np.matmul(Cs[i], etas[t-i])
         omega[i, :] = (-w - littleS)
-    return omega
+    omega_t = {tuple(row) for row in omega} # changed this to hashable set
+    return omega_t
 
 def getOuts(ys, Cs, p, t):
     lsum = 0
