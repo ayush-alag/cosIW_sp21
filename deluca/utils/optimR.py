@@ -24,29 +24,29 @@ class optimROBD(Object):
         prevH = self._prevH
 
         # returns a function of y
-        prevFunc = hittingCost(prevH, v_tminus)
+        prevFunc = self.hittingCost(prevH, v_tminus)
 
         # building out the yhat sequence
-        self._yhats[i-1, :] = robdSub(prevFunc, t-1)
+        self._yhats[t-1, :] = self.robdSub(prevFunc, t-1)
 
         #TODO: understand the double min thing and recover vtilde
-        vtilde = findSetMin(doubleFunc(h_t, t), omega_t)
+        vtilde = self.findSetMin(self.doubleFunc(h_t, t), omega_t)
 
-        fhatFunc = hittingCost(h_t, vtilde)
+        fhatFunc = self.hittingCost(h_t, vtilde)
         self._prevH = h_t
 
-        y_t = robdSub(fhatFunc, t)
+        y_t = self.robdSub(fhatFunc, t)
 
         return y_t
 
-    def doubleFunc(h_t, t):
+    def doubleFunc(self, h_t, t):
         def func(params):
             y = params[:self._d]
             v = params[self._d:]
-            return h_t(y - v) + self._lam * cost(t)(y)
+            return h_t(y - v) + self._lam * self.cost(t)(y)
         return func
     
-    def constraint(omega_t):
+    def constraint(self, omega_t):
         def func(params):
             y = params[:self._d]
             v = params[self._d:]
@@ -58,10 +58,10 @@ class optimROBD(Object):
     ''' To implement from here '''  
 
     #TODO: need to really check/test this
-    def findSetMin(function, omega_t):
+    def findSetMin(self, function, omega_t):
         x0 = np.random.rand(self._d, 2)
         # constraint: must be in the set omega_t
-        cons = ({'type': 'eq', 'fun': constraint(omega_t)})
+        cons = ({'type': 'eq', 'fun': self.constraint(omega_t)})
 
         result = minimize(function, x0, method = 'SLSQP', constraints=cons)
         if result.success:
@@ -72,7 +72,7 @@ class optimROBD(Object):
     
     # Find the d x 1 vector y that minimizes the function parameter
     # TODO: change to convex optimizer
-    def _findMin(func):
+    def _findMin(self, func):
         x0 = np.random.rand(self._d)
         res = minimize(func, x0, method='BFGS', options={'disp':False})
         return np.array(res.x)
@@ -80,21 +80,21 @@ class optimROBD(Object):
     ''' End to implement here'''
 
     # subroutine for ROBD and optimistic ROBD
-    def robdSub(fun, t):
-        vel = _findMin(fun)
+    def robdSub(self, fun, t):
+        vel = self._findMin(fun)
 
         # below line: find minimum of entire expression with respect to y
-        out = _findMin(totalCost(fun, vel, t))
+        out = self._findMin(self.totalCost(fun, vel, t))
         return out
     
     # precondition: v_t must be a numpy array
-    def totalCost(fun, v_t, t):
+    def totalCost(self, fun, v_t, t):
         def func(y):
-            return fun(y) + self._l1*cost(t)(y) + self._l2 * dist(v_t)(y)
+            return fun(y) + self._l1 * self.cost(t)(y) + self._l2 * self.dist(v_t)(y)
         return func
     
     #precondition: yhats, Cs must be numpy arrays
-    def cost(t):
+    def cost(self, t):
         def func (y):
             # each element in decisions is a d x 1 vector, and C is dxd (for each time step)
 
@@ -109,14 +109,14 @@ class optimROBD(Object):
             return (norm**2)/2
         return func
 
-    def dist(v_t):
+    def dist(self, v_t):
         def func(y):
             norm = np.linalg.norm(y-v_t)
             return (norm**2)/2
         return func
 
     # must be numpy arrays
-    def hittingCost(h, v_t):
+    def hittingCost(self, h, v_t):
         def func(y):
             return h(y-v_t)
         return func
