@@ -22,13 +22,14 @@ class optimROBD(Object):
     def step(self, v_tminus, h_t, omega_t, t):
         prevH = self._prevH
 
+        # returns a function of y
         prevFunc = hittingCost(prevH, v_tminus)
 
         # building out the yhat sequence
         self._yhats[i-1, :] = robdSub(prevFunc, t-1)
 
         #TODO: understand the double min thing and recover vtilde
-        vtilde = findSetMin(doubleFunc, omega_t)
+        vtilde = findSetMin(doubleFunc(h_t, t), omega_t)
 
         fhatFunc = hittingCost(h_t, vtilde)
         self._prevH = h_t
@@ -37,18 +38,34 @@ class optimROBD(Object):
 
         return y_t
 
-    ''' To implement from here '''
-
-    #TODO: implement this double min loss function
     def doubleFunc(h_t, t):
-        def func(y, v):
-            # modify h_t as well as all of the other functions
+        def func(params):
+            y, v = params
             return h_t(y - v) + self._lam * cost(t)(y)
         return func
     
-    #TODO: implement this double minimizer
+    def constraint(omega_t):
+        def func(params):
+            y, v = params
+            if v in omega_t:
+                return 0
+            return .1 #return a non-zero element
+        return func
+
+    ''' To implement from here '''  
+    
+    #TODO: need to really check/test this
     def findSetMin(function, omega_t):
-        return
+        x0 = np.random.rand(self._d, 2)
+        # constraint: must be in the set omega_t
+        cons = ({'type': 'eq', 'fun': constraint(omega_t)})
+
+        result = minimize(function, x0, method = 'SLSQP', constraints=cons)
+        if result.success:
+            fitted_params = result.x[:, 1] #want to return v?
+            return fitted_params
+        else:
+            raise ValueError(result.message)
     
     # Find the d x 1 vector y that minimizes the function parameter
     # TODO: change to convex optimizer
@@ -56,7 +73,7 @@ class optimROBD(Object):
         x0 = np.random.rand(self._d)
         res = minimize(func, x0, method='BFGS', options={'disp':True})
         return res.x
-        
+
     ''' End to implement here'''
 
     # subroutine for ROBD and optimistic ROBD
@@ -83,12 +100,11 @@ class optimROBD(Object):
             summ = np.ndarray((self._d, 1))
             for i in range(self._p):
                 C = Cs[i]
-                summ += np.matmul(C, decisions[t-i].T) #TODO: check
+                summ += np.matmul(C, decisions[t-i, :].T) #TODO: check
             norm = np.linalg.norm(y - summ)
             return (norm**2)/2
         return func
 
-    #assuming this is y_t
     def dist(v_t):
         def func(y):
             norm = np.linalg.norm(y-v_t)
