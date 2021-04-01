@@ -48,7 +48,7 @@ class optimROBD(Object):
     def constraint(omega_t):
         def func(params):
             y, v = params
-            if v in omega_t:
+            if v in omega_t: #TODO: flesh out based on omega_t structure
                 return 0
             return .1 #return a non-zero element
         return func
@@ -79,10 +79,10 @@ class optimROBD(Object):
 
     # subroutine for ROBD and optimistic ROBD
     def robdSub(fun, t):
-        vel = findMin(fun)
+        vel = _findMin(fun)
 
         # below line: find minimum of entire expression with respect to y
-        out = findMin(totalCost(fun, vel, t))
+        out = _findMin(totalCost(fun, vel, t))
         return out
     
     # precondition: v_t must be a numpy array
