@@ -3,6 +3,8 @@ import jax.numpy as jnp
 import numpy as np
 from jax import grad
 from jax import jit
+import cvxopt # TODO: speed up via convex approach
+from scipy.optimize import minimize
 
 class optimROBD(Object):
 
@@ -26,7 +28,7 @@ class optimROBD(Object):
         self._yhats[i-1, :] = robdSub(prevFunc, t-1)
 
         #TODO: understand the double min thing and recover vtilde
-        vtilde = findSetMin(someFunc, omega_t)
+        vtilde = findSetMin(doubleFunc, omega_t)
 
         fhatFunc = hittingCost(h_t, vtilde)
         self._prevH = h_t
@@ -40,18 +42,21 @@ class optimROBD(Object):
     #TODO: implement this double min loss function
     def doubleFunc(h_t, t):
         def func(y, v):
-            return
-        return
+            # modify h_t as well as all of the other functions
+            return h_t(y - v) + self._lam * cost(t)(y)
+        return func
     
     #TODO: implement this double minimizer
     def findSetMin(function, omega_t):
         return
     
     # Find the d x 1 vector y that minimizes the function parameter
+    # TODO: change to convex optimizer
     def _findMin(func):
-        #TODO: implement gradient descent algorithm here
-        return 0 #TODO: change
-    
+        x0 = np.random.rand(self._d)
+        res = minimize(func, x0, method='BFGS', options={'disp':True})
+        return res.x
+        
     ''' End to implement here'''
 
     # subroutine for ROBD and optimistic ROBD
@@ -64,7 +69,7 @@ class optimROBD(Object):
     
     def totalCost(fun, v_t, t):
         def func(y):
-            return fun(y) + self._l1*cost(t) + self._l2 * dist(v_t)
+            return fun(y) + self._l1*cost(t)(y) + self._l2 * dist(v_t)(y)
         return func
     
     def cost(t):
