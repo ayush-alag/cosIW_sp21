@@ -19,7 +19,7 @@ class optimROBD(Object):
 
 
     # does a specific instance of oROBD
-    # precondition: v_tminus must be a numpy array
+    # h_t comes from the control algorithm
     def step(self, v_tminus, h_t, omega_t, t):
         prevH = self._prevH
 
@@ -72,7 +72,7 @@ class optimROBD(Object):
     # TODO: change to convex optimizer
     def _findMin(func):
         x0 = np.random.rand(self._d)
-        res = minimize(func, x0, method='BFGS', options={'disp':True})
+        res = minimize(func, x0, method='BFGS', options={'disp':False})
         return np.array(res.x)
 
     ''' End to implement here'''
