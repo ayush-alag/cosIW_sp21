@@ -6,14 +6,26 @@ from jax import jit
 import cvxopt # TODO: speed up via convex approach
 from scipy.optimize import minimize
 
-class optimROBD(Object):
+''' How to use:
+1) instantiate and pass the first h_0 function during control Alg 3
+2) call optim.step() every time you want to get the next output
+'''
 
-    def __init__(self, lam=0, Cs, p, T, d):
+class optimROBD(object):
+
+    ''' TODOS: 
+    1) what is prevH_0? Answer: must create when sending it in
+    2) how do we do the projection using scipy?
+    '''
+
+    def __init__(self, Cs, p, T, d, prevH, lam=0):
         self._lam = lam
+        self._l1 = lam
+        self._l2 = 0
         self._Cs = np.array(Cs)
         self._p = p
         self._T = T
-        self._prevH = 0 # what is h_0?
+        self._prevH = prevH
         self._yhats = np.ndarray((T, d))
         self._d = d
 
@@ -29,7 +41,6 @@ class optimROBD(Object):
         # building out the yhat sequence
         self._yhats[t-1, :] = self.robdSub(prevFunc, t-1)
 
-        #TODO: understand the double min thing and recover vtilde
         vtilde = self.findSetMin(self.doubleFunc(h_t, t), omega_t)
 
         fhatFunc = self.hittingCost(h_t, vtilde)
@@ -39,6 +50,7 @@ class optimROBD(Object):
 
         return y_t
 
+    #TODO: change if necessary
     def doubleFunc(self, h_t, t):
         def func(params):
             y = params[:self._d]
@@ -46,6 +58,7 @@ class optimROBD(Object):
             return h_t(y - v) + self._lam * self.cost(t)(y)
         return func
     
+    #TODO: change if necessary
     def constraint(self, omega_t):
         def func(params):
             y = params[:self._d]
@@ -57,15 +70,19 @@ class optimROBD(Object):
 
     ''' To implement from here '''  
 
-    #TODO: need to really check/test this
+    #TODO: incorporate projection
     def findSetMin(self, function, omega_t):
-        x0 = np.random.rand(self._d, 2)
+        x0 = (np.random.randn(d), np.random.randn(d))
         # constraint: must be in the set omega_t
+        '''
         cons = ({'type': 'eq', 'fun': self.constraint(omega_t)})
 
         result = minimize(function, x0, method = 'SLSQP', constraints=cons)
+        '''
+
+        result = minimize(function, x0, method = 'COBYLA')
         if result.success:
-            fitted_params = np.array(result.x[:, 1]) #want to return v?
+            fitted_params = np.array(result.x[1]) #want to return v?
             return fitted_params
         else:
             raise ValueError(result.message)
