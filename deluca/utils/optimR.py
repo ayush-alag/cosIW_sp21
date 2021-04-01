@@ -41,16 +41,18 @@ class optimROBD(Object):
 
     def doubleFunc(h_t, t):
         def func(params):
-            y, v = params
+            y = params[:self._d]
+            v = params[self._d:]
             return h_t(y - v) + self._lam * cost(t)(y)
         return func
     
     def constraint(omega_t):
         def func(params):
-            y, v = params
+            y = params[:self._d]
+            v = params[self._d:]
             if tuple(v) in omega_t:
                 return 0
-            return .1 #return a non-zero element
+            return 1 #return a non-zero element
         return func
 
     ''' To implement from here '''  
@@ -102,7 +104,7 @@ class optimROBD(Object):
             summ = np.zeros(self._d)
             for i in range(self._p):
                 C = Cs[i]
-                summ += np.matmul(C, decisions[p-i-1].T) #TODO: check
+                summ += np.matmul(C, decisions[self._p-i-1].T) #TODO: check
             norm = np.linalg.norm(y - summ)
             return (norm**2)/2
         return func
