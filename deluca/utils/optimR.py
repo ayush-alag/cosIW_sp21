@@ -10,7 +10,7 @@ class optimROBD(Object):
 
     def __init__(self, lam=0, Cs, p, T, d):
         self._lam = lam
-        self._Cs = Cs
+        self._Cs = np.array(Cs)
         self._p = p
         self._T = T
         self._prevH = 0 # what is h_0?
@@ -19,6 +19,7 @@ class optimROBD(Object):
 
 
     # does a specific instance of oROBD
+    # precondition: v_tminus must be a numpy array
     def step(self, v_tminus, h_t, omega_t, t):
         prevH = self._prevH
 
@@ -53,7 +54,7 @@ class optimROBD(Object):
         return func
 
     ''' To implement from here '''  
-    
+
     #TODO: need to really check/test this
     def findSetMin(function, omega_t):
         x0 = np.random.rand(self._d, 2)
@@ -62,7 +63,7 @@ class optimROBD(Object):
 
         result = minimize(function, x0, method = 'SLSQP', constraints=cons)
         if result.success:
-            fitted_params = result.x[:, 1] #want to return v?
+            fitted_params = np.array(result.x[:, 1]) #want to return v?
             return fitted_params
         else:
             raise ValueError(result.message)
@@ -72,7 +73,7 @@ class optimROBD(Object):
     def _findMin(func):
         x0 = np.random.rand(self._d)
         res = minimize(func, x0, method='BFGS', options={'disp':True})
-        return res.x
+        return np.array(res.x)
 
     ''' End to implement here'''
 
@@ -84,23 +85,24 @@ class optimROBD(Object):
         out = findMin(totalCost(fun, vel, t))
         return out
     
+    # precondition: v_t must be a numpy array
     def totalCost(fun, v_t, t):
         def func(y):
             return fun(y) + self._l1*cost(t)(y) + self._l2 * dist(v_t)(y)
         return func
     
+    #precondition: yhats, Cs must be numpy arrays
     def cost(t):
         def func (y):
-            #TODO: switching cost function
             # each element in decisions is a d x 1 vector, and C is dxd (for each time step)
 
-            decisions = self._yhats[t - self._p : t, :]
+            decisions = self._yhats[t - self._p : t]
             Cs = self._Cs
 
-            summ = np.ndarray((self._d, 1))
+            summ = np.zeros(self._d)
             for i in range(self._p):
                 C = Cs[i]
-                summ += np.matmul(C, decisions[t-i, :].T) #TODO: check
+                summ += np.matmul(C, decisions[p-i-1].T) #TODO: check
             norm = np.linalg.norm(y - summ)
             return (norm**2)/2
         return func
@@ -111,6 +113,7 @@ class optimROBD(Object):
             return (norm**2)/2
         return func
 
+    # must be numpy arrays
     def hittingCost(h, v_t):
         def func(y):
             return h(y-v_t)
