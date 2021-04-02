@@ -44,16 +44,13 @@ class Mem(Agent):
       def __init__(
           self,
           T: int,
-          base_controller,
           A: jnp.ndarray,
           B: jnp.ndarray,
-          qs,
-          Wt,
-          xt):
+          qs,  # scalar for the control cost
+          Wt,  # estimation set
+          xt): # next state
 
             self._A, self._B = A, B
-
-            self._base_controller = base_controller
 
             # Start From Uniform Distribution
             self._T = T
@@ -63,16 +60,16 @@ class Mem(Agent):
 
             self._x0 = np.zeros((A.shape[1], 1))
 
-            # State and Action TODO:change
+            # State and Action TODO:change (add initial u)
             # self._x, self._u = jnp.zeros((self.n, 1)), jnp.zeros((self.m, 1))
 
             # self._w = jnp.zeros((HH, self.n, 1))
 
-
-        def etaMult(self, Cs, etas, t):
+        # for multiplying the zetas
+        def etaMult(self, etas, t):
             summ = 0
             for i in range(1, p+1):
-                summ += np.matmul(Cs[i], etas[t-1-i])
+                summ += np.matmul(self._Cs[i], etas[t-1-i])
             return summ
 
         def idx(self):
@@ -137,9 +134,9 @@ class Mem(Agent):
             return ys[t] - lsum
 
         def controlAlgo(self, xs, Ws, qs):
-            self.idx(B)
-            self.defineP(ks)
-            self.defineCs(A, ks, p, ps)
+            self.idx(B)                                          # creates ks,d
+            self.defineP(self._ks)                               # creates ps, p
+            self.defineCs(self._A, self._ks, self._p, self._ps)  # creates Cs
 
             etas = np.ndarray((self._T, self._d))
             outs = np.ndarray((self._T, self._d))
@@ -153,7 +150,7 @@ class Mem(Agent):
                     subValue = xs[t]-np.matmul(self._A, xs[t-1])-np.matmul(self._B, us[t-1])
                     w_tminus = subvalue[self._ks]
 
-                    etas[t-1] = w_tminus + self.etaMult(self._Cs, etas, t)
+                    etas[t-1] = w_tminus + self.etaMult(etas, t)
                     v_tminus = -1 * etas[t-1]
 
                 func = self.hitFunc(qs, t)
