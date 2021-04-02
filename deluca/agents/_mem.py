@@ -38,9 +38,6 @@ def sqRegCost(xs, us, qs, T):
         summ += q/2*(np.linalg.norm(x)**2) + (np.linalg.norm(u)**2)/2
     return summ
 '''
-        
-
-
 
 # TODO: convert to JNP?
 class Mem(Agent):
@@ -50,25 +47,26 @@ class Mem(Agent):
           base_controller,
           A: jnp.ndarray,
           B: jnp.ndarray,
-          cost_fn: Callable[[jnp.ndarray, jnp.ndarray], Real] = None):
+          qs,
+          Wt,
+          xt):
 
-            self.A, self.B = A, B
-            self.n, self.m = B.shape
+            self._A, self._B = A, B
 
-            cost_fn = cost_fn or quad_loss
-
-            self.base_controller = base_controller
+            self._base_controller = base_controller
 
             # Start From Uniform Distribution
-            self.T = T
+            self._T = T
 
             # Store Model Hyperparameters
-            self.eta, self.eps, self.inf = eta, eps, inf
+            self._eta, self._eps, self._inf = eta, eps, inf
 
-            # State and Action
-            self.x, self.u = jnp.zeros((self.n, 1)), jnp.zeros((self.m, 1))
+            self._x0 = np.zeros((A.shape[1], 1))
 
-            self.w = jnp.zeros((HH, self.n, 1))
+            # State and Action TODO:change
+            # self._x, self._u = jnp.zeros((self.n, 1)), jnp.zeros((self.m, 1))
+
+            # self._w = jnp.zeros((HH, self.n, 1))
 
 
         def etaMult(self, Cs, etas, t):
@@ -77,95 +75,94 @@ class Mem(Agent):
                 summ += np.matmul(Cs[i], etas[t-1-i])
             return summ
 
-        # B should be a numpy array
-        def idx(self, B):
-            return np.where(B.any(axis=1))[0] #return indices of non-zero rows
+        def idx(self):
+            self._ks = np.where((self._B).any(axis=1))[0]
+            self._d = len(self._ks)
 
-        def defineP(self, ks):
-            ps = np.ndarray((len(ks), 1))
-            ps[0] = ks[0]
+        def defineP(self):
+            ps = np.ndarray((self._d, 1))
+            ps[0] = self._ks[0]
             for i in range(1,len(ks)):
                 ps[i] = ks[i] - ks[i-1]
-            return ps.astype(int), int(np.amax(ps))
+            self._ps = ps.astype(int)
+            self._p = int(np.amax(ps))
 
-        #TODO: define d and other undefined variables throughout
+        #TODO: fix this to make it work
         #TODO: check indices all over (1-indexed vs 0-indexed)
-        def defineCs(self, A, ks, p, ps):
-            d = len(ks)
-            Cs = np.ndarray((p, d, d))
-            #TODO: change from 0-indexed to 1-indexed (add dummy)
-            for i in range(p):
-                a_identity = A[ks, :] #check slicing
-                C = np.ndarray((d, d))
-                for j in range(d):
-                    if i <= ps[j]:
-                        C[:, j] = a_identity[:, ks[j]+1-i]
-                    else:
-                        C[:, j] = np.zeros(d)
-                Cs[i] = C
-            return Cs
+        def defineCs(self):
+            Cs = np.ndarray((self._p, self._d, self._d))
 
-        def hitFunc(self, qs, ps, ks, t):
+            #TODO: change from 0-indexed to 1-indexed (add dummy)
+            for i in range(self._p):
+                a_identity = self._A[self._ks, :] #check slicing
+                C = np.ndarray((self._d, self._d))
+                for j in range(self._d):
+                    if i <= self._ps[j]:
+                        C[:, j] = a_identity[:, self._ks[j]+1-i]
+                    else:
+                        C[:, j] = np.zeros(self._d)
+                Cs[i] = C
+            self._Cs = Cs
+
+        def hitFunc(self, qs, t):
             # define a function of y that can be optimized
             # is y n-dimensional or d-dimensional? 
             # TODO: clarify and change to d-dimensional based on ks
             def func(y):
                 masterSum = 0
-                d = len(ks)
-                for i in range(d):
+                for i in range(self._d):
                     littleSum = 0
-                    for j in range(1, ps[i]):
+                    for j in range(1, self._ps[i]):
                         littleSum += qs[t+j]
-                    masterSum += (littleSum * (y[ks[i]] ** 2))
+                    masterSum += (littleSum * (y[self._ks[i]] ** 2))
                 return masterSum/2
-
             return func
 
-        def getOmega(self, W, p, Cs, etas, t, d):
+        # TODO: change to a continuous type
+        def getOmega(self, W, etas, t):
             #TODO: change omega's type to a set? clarify meaning of W
-            omega = np.ndarray((len(W), d))
+            omega = np.ndarray((len(W), self._d))
             for i, w in enumerate(W):
                 littleS = 0
-                for i in range(1, p+1):
-                    littleS += np.matmul(Cs[i], etas[t-i])
+                for i in range(1, self._p+1):
+                    littleS += np.matmul(self._Cs[i], etas[t-i])
                 omega[i, :] = (-w - littleS)
             omega_t = {tuple(row) for row in omega} # changed this to hashable set
             return omega_t
 
-        def getOuts(self, ys, Cs, p, t):
+        def getOuts(self, ys, t):
             lsum = 0
-            for i in range(p):
-                lsum += np.matmul(Cs[i], ys[t-i])
+            for i in range(self._p):
+                lsum += np.matmul(self._Cs[i], ys[t-i])
             return ys[t] - lsum
 
-        def controlAlgo(self, A, B, T, xs, Ws, qs):
-            ks = self.idx(B)
-            ps, p = self.defineP(ks)
-            Cs = self.defineCs(A, ks, p, ps)
-            d = len(ks)
+        def controlAlgo(self, xs, Ws, qs):
+            self.idx(B)
+            self.defineP(ks)
+            self.defineCs(A, ks, p, ps)
 
-            etas = np.ndarray((T, d))
-            outs = np.ndarray((T, d))
-            us = np.ndarray((T, d))
+            etas = np.ndarray((self._T, self._d))
+            outs = np.ndarray((self._T, self._d))
+            us = np.ndarray((self._T, self._d))
 
             #TODO: instantiate solver
-            solver = optimROBD(Cs, p, T, d)
+            solver = optimROBD(self._Cs, self._p, self._T, self._d)
 
-            for t in range(T):
+            for t in range(self._T):
                 if t > 0:
-                    subValue = xs[t]-np.matmul(A, xs[t-1])-np.matmul(B, us[t-1])
-                    w_tminus = subvalue[ks]
+                    subValue = xs[t]-np.matmul(self._A, xs[t-1])-np.matmul(self._B, us[t-1])
+                    w_tminus = subvalue[self._ks]
 
-                    etas[t-1] = w_tminus + self.etaMult(Cs, etas, t)
+                    etas[t-1] = w_tminus + self.etaMult(self._Cs, etas, t)
                     v_tminus = -1 * etas[t-1]
 
-                func = self.hitFunc(qs, ps, ks, t)
-                omega = self.getOmega(Ws[t], p, Cs, etas, t, len(ks))
+                func = self.hitFunc(qs, t)
+                omega = self.getOmega(Ws[t], etas, t)
 
                 # TODO: what is lambda? to be handled by solver
                 outs[t] = solver.step(v_tminus, func, omega, t)
 
-                us[t] = getOuts(outs, Cs, p, t)
+                us[t] = getOuts(outs, t)
             us[T] = 0
             return us
 
