@@ -44,64 +44,101 @@ class Mem(Agent):
       def __init__(
           self,
           T: int,
-          A: jnp.ndarray,
-          B: jnp.ndarray,
-          qs,  # scalar for the control cost
-          Wt,  # estimation set
-          xt): # next state
+          A,
+          B,
+          radius=1) # scalar for the control cost
 
-            self._A, self._B = A, B
+            self._A, self._B = np.array(A), np.array(B)
+            self._n = A.shape[0]
+            self._d = B.shape[1]
+            assert self._n == B.shape[0]
 
             # Start From Uniform Distribution
             self._T = T
+            self._radius = radius
 
-            # Store Model Hyperparameters
-            self._eta, self._eps, self._inf = eta, eps, inf
+            # keep track of the current timestep
+            self._t = 0
+            assert t <= self._T
 
-            self._x0 = np.zeros((A.shape[1], 1))
+            # 0 to T-1: first row is already 0 (initial start) for xs, not for us
+            self._xs = np.zeros((self._T, self._n))
+            self._us = np.zeros((self._T, self._d))
 
-            # State and Action TODO:change (add initial u)
-            # self._x, self._u = jnp.zeros((self.n, 1)), jnp.zeros((self.m, 1))
+            # used in the computation, set to 0's
+            self._etas = np.zeros((self._T, self._n))
+            self._ys = np.zeros((self._T, self._d))
 
-            # self._w = jnp.zeros((HH, self.n, 1))
+            ''' starting the processes '''
+            self.idx()        # creates ks,d
+            self.defineP()    # creates ps, p
+            self.defineCs()   # creates Cs
 
-        # for multiplying the zetas
-        def etaMult(self, etas, t):
-            summ = 0
-            for i in range(1, p+1):
-                summ += np.matmul(self._Cs[i], etas[t-1-i])
-            return summ
 
         def idx(self):
             self._ks = np.where((self._B).any(axis=1))[0]
-            self._d = len(self._ks)
+            assert self._d == len(self._ks)
 
         def defineP(self):
-            ps = np.ndarray((self._d, 1))
+            ps = np.ndarray((self._d, ))
             ps[0] = self._ks[0]
-            for i in range(1,len(ks)):
-                ps[i] = ks[i] - ks[i-1]
+            for i in range(1,len(self._ks)):
+                ps[i] = self._ks[i] - self._ks[i-1]
             self._ps = ps.astype(int)
             self._p = int(np.amax(ps))
 
-        #TODO: fix this to make it work
-        #TODO: check indices all over (1-indexed vs 0-indexed)
+
         def defineCs(self):
             Cs = np.ndarray((self._p, self._d, self._d))
 
-            #TODO: change from 0-indexed to 1-indexed (add dummy)
-            for i in range(self._p):
+            for i in range(1, self._p+1):
                 a_identity = self._A[self._ks, :] #check slicing
                 C = np.ndarray((self._d, self._d))
-                for j in range(self._d):
-                    if i <= self._ps[j]:
-                        C[:, j] = a_identity[:, self._ks[j]+1-i]
+                for j in range(1, self._d+1):
+                    if i <= self._ps[j-1]:
+                        C[:, j-1] = a_identity[:, self._ks[j-1]+1-i]
                     else:
-                        C[:, j] = np.zeros(self._d)
-                Cs[i] = C
+                        C[:, j-1] = np.zeros(self._d)
+                Cs[i-1] = C
             self._Cs = Cs
 
-        def hitFunc(self, qs, t):
+        # takes in state, disturbance, qs, lambda
+        def __call__(self, x_t, W_t, q_t=np.ones((self._p)), lam=0):
+            self._xs[self._t] = x_t # add it to the list
+            u = self.controlAlgo(W_t, q_t)
+
+            return self.u
+
+        # TODO: should update self._t internally
+        # TODO: should send the actual derivative to optimROBD
+        def controlAlgo(self, Ws, qs, lam):
+            func = self.hitFunc(qs, self._t)
+
+            solver = optimROBD(self._Cs, self._p, self._T, self._d, func, lam)
+
+            ''' changed here to single call '''
+            assert self._t < self._T
+            if self._t > 0:
+                subValue = self._xs[self._t]-np.matmul(self._A, self._xs[self._t - 1])-np.matmul(self._B, self._us[self._t-1])
+                w_tminus = subValue[self._ks]
+
+                self._etas[self._t-1] = w_tminus + self.etaMult()
+                v_tminus = -1 * self._etas[self._t-1]
+
+            # TODO: change to just getting the center
+            omega = self.getOmega(Ws[self._t])
+
+            # TODO: change the parameters of solver
+            self._ys[self._t] = solver.step(v_tminus, func, omega, self._radius, self._t)
+
+            self._us[self._t] = self.getOuts()
+
+
+            #TODO: remove this
+            self.us[self._T] = 0
+            return us
+        
+        def hitFunc(self, qs):
             # define a function of y that can be optimized
             # is y n-dimensional or d-dimensional? 
             # TODO: clarify and change to d-dimensional based on ks
@@ -109,11 +146,19 @@ class Mem(Agent):
                 masterSum = 0
                 for i in range(self._d):
                     littleSum = 0
-                    for j in range(1, self._ps[i]):
-                        littleSum += qs[t+j]
+                    for j in range(1, int(self._ps[i])):
+                        littleSum += qs[self._t+j]
                     masterSum += (littleSum * (y[self._ks[i]] ** 2))
                 return masterSum/2
             return func
+
+        # for multiplying the zetas
+        def etaMult(self):
+            summ = 0
+            for idx, C in enumerate(self._Cs):
+                if self._t-2-idx >= 0: 
+                    summ += np.matmul(C, self._etas[self._t-2-idx])
+            return summ
 
         # TODO: change to a continuous type
         def getOmega(self, W, etas, t):
@@ -127,56 +172,8 @@ class Mem(Agent):
             omega_t = {tuple(row) for row in omega} # changed this to hashable set
             return omega_t
 
-        def getOuts(self, ys, t):
+        def getOuts(self):
             lsum = 0
             for i in range(self._p):
-                lsum += np.matmul(self._Cs[i], ys[t-i])
-            return ys[t] - lsum
-
-        def controlAlgo(self, xs, Ws, qs):
-            self.idx(B)                                          # creates ks,d
-            self.defineP(self._ks)                               # creates ps, p
-            self.defineCs(self._A, self._ks, self._p, self._ps)  # creates Cs
-
-            etas = np.ndarray((self._T, self._d))
-            outs = np.ndarray((self._T, self._d))
-            us = np.ndarray((self._T, self._d))
-
-            #TODO: instantiate solver
-            solver = optimROBD(self._Cs, self._p, self._T, self._d)
-
-            for t in range(self._T):
-                if t > 0:
-                    subValue = xs[t]-np.matmul(self._A, xs[t-1])-np.matmul(self._B, us[t-1])
-                    w_tminus = subvalue[self._ks]
-
-                    etas[t-1] = w_tminus + self.etaMult(etas, t)
-                    v_tminus = -1 * etas[t-1]
-
-                func = self.hitFunc(qs, t)
-                omega = self.getOmega(Ws[t], etas, t)
-
-                # TODO: what is lambda? to be handled by solver
-                outs[t] = solver.step(v_tminus, func, omega, t)
-
-                us[t] = getOuts(outs, t)
-            us[T] = 0
-            return us
-
-        def policy_loss(controller, A, B, x, w):
-
-            def evolve(x, h):
-                """Evolve function"""
-                return A @ x + B @ controller.get_action(x) + w[h], None
-
-            final_state, _ = jax.lax.scan(evolve, x, jnp.arange(HH))
-            return cost_fn(final_state, controller.get_action(final_state))
-
-        self.policy_loss = policy_loss
-
-
-      def __call__(self, x, A, B):
-
-        u = self.controlAlgo(A,B,T, xs, Ws, qs) # to implement
-
-        return self.u
+                lsum += np.matmul(self._Cs[i], self._ys[self._t-i])
+            return self._ys[self._t] - lsum
