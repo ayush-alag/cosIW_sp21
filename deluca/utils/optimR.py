@@ -18,7 +18,7 @@ class optimROBD(object):
     2) how do we do the projection using scipy?
     '''
 
-    def __init__(self, Cs, p, T, d, prevH, lam=0):
+    def __init__(self, Cs, p, T, d, prevH, n, lam=0):
         self._lam = lam
         self._l1 = lam
         self._l2 = 0
@@ -28,11 +28,11 @@ class optimROBD(object):
         self._prevH = prevH
         self._yhats = np.ndarray((T, d))
         self._d = d
-
+        self._n = n
 
     # does a specific instance of oROBD
     # h_t comes from the control algorithm
-    def step(self, v_tminus, h_t, omega_t, t):
+    def step(self, v_tminus, h_t, omega_t, radius_t, t):
         prevH = self._prevH
 
         # returns a function of y
@@ -72,7 +72,7 @@ class optimROBD(object):
 
     #TODO: incorporate projection
     def findSetMin(self, function, omega_t):
-        x0 = (np.random.randn(d), np.random.randn(d))
+        x0 = (np.random.randn(self._d), np.random.randn(self._d))
         # constraint: must be in the set omega_t
         '''
         cons = ({'type': 'eq', 'fun': self.constraint(omega_t)})
@@ -113,15 +113,13 @@ class optimROBD(object):
     #precondition: yhats, Cs must be numpy arrays
     def cost(self, t):
         def func (y):
-            # each element in decisions is a d x 1 vector, and C is dxd (for each time step)
-
-            decisions = self._yhats[t - self._p : t]
             Cs = self._Cs
 
             summ = np.zeros(self._d)
             for i in range(self._p):
-                C = Cs[i]
-                summ += np.matmul(C, decisions[self._p-i-1].T) #TODO: check
+                if t - i > 0:
+                    C = Cs[i]
+                    summ += np.matmul(C, self._yhats[t-i-1].T) #TODO: check
             norm = np.linalg.norm(y - summ)
             return (norm**2)/2
         return func
