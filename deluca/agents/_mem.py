@@ -63,7 +63,7 @@ class Mem(Agent):
 
             # 0 to T-1: first row is already 0 (initial start) for xs, not for us
             self._xs = np.zeros((self._T, self._n))
-            self._us = np.zeros((self._T, self._d))
+            self._us = np.zeros((self._T+1, self._d))
 
             # used in the computation, set to 0's
             self._etas = np.zeros((self._T, self._n))
@@ -102,19 +102,21 @@ class Mem(Agent):
                 Cs[i-1] = C
             self._Cs = Cs
 
-        # takes in state, disturbance, qs, lambda
-        def __call__(self, x_t, W_t, q_t=np.ones((self._p)), lam=0):
+        # takes in state, disturbance radius, qs, lambda
+        def __call__(self, x_t, radius_t=1, q_t=np.ones((self._p+self._T)), lam=0):
             self._xs[self._t] = x_t # add it to the list
-            u = self.controlAlgo(W_t, q_t)
+            self._u[self._t] = self.controlAlgo(radius_t, q_t)
 
-            return self.u
+            return self._u[self._t]
 
         # TODO: should update self._t internally
         # TODO: should send the actual derivative to optimROBD
-        def controlAlgo(self, Ws, qs, lam):
+        def controlAlgo(self, radius_t, qs, lam):
             func = self.hitFunc(qs, self._t)
 
             solver = optimROBD(self._Cs, self._p, self._T, self._d, func, lam)
+
+            #TODO: add a default value for v_tminus: what happens when t = 0??
 
             ''' changed here to single call '''
             assert self._t < self._T
@@ -125,23 +127,17 @@ class Mem(Agent):
                 self._etas[self._t-1] = w_tminus + self.etaMult()
                 v_tminus = -1 * self._etas[self._t-1]
 
-            # TODO: change to just getting the center
-            omega = self.getOmega(Ws[self._t])
+            omega = self.getOmega()
 
             # TODO: change the parameters of solver
             self._ys[self._t] = solver.step(v_tminus, func, omega, self._radius, self._t)
 
             self._us[self._t] = self.getOuts()
 
-
-            #TODO: remove this
-            self.us[self._T] = 0
+            self._t += 1
             return us
         
         def hitFunc(self, qs):
-            # define a function of y that can be optimized
-            # is y n-dimensional or d-dimensional? 
-            # TODO: clarify and change to d-dimensional based on ks
             def func(y):
                 masterSum = 0
                 for i in range(self._d):
@@ -160,20 +156,15 @@ class Mem(Agent):
                     summ += np.matmul(C, self._etas[self._t-2-idx])
             return summ
 
-        # TODO: change to a continuous type
-        def getOmega(self, W, etas, t):
-            #TODO: change omega's type to a set? clarify meaning of W
-            omega = np.ndarray((len(W), self._d))
-            for i, w in enumerate(W):
-                littleS = 0
-                for i in range(1, self._p+1):
-                    littleS += np.matmul(self._Cs[i], etas[t-i])
-                omega[i, :] = (-w - littleS)
-            omega_t = {tuple(row) for row in omega} # changed this to hashable set
-            return omega_t
+        def getOmega(self):
+            summ = 0
+            for idx, C in enumerate(self._Cs):
+                if self._t-1-idx >= 0: 
+                    summ += np.matmul(C, self._etas[self._t-1-idx])
+            return -1 * summ
 
         def getOuts(self):
             lsum = 0
-            for i in range(self._p):
-                lsum += np.matmul(self._Cs[i], self._ys[self._t-i])
+            for idx, C in enumerate(self._Cs):
+                lsum += np.matmul(C, self._ys[self._t-idx-1])
             return self._ys[self._t] - lsum
