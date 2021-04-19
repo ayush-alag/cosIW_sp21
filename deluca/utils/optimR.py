@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import numpy as np
 from jax import grad
 from jax import jit
-import cvxopt # TODO: speed up via convex approach
+#import cvxopt # TODO: speed up via convex approach
 from scipy.optimize import minimize
 
 ''' How to use:
