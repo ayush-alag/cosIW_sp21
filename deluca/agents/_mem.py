@@ -162,5 +162,5 @@ class Mem(Agent):
     def __call__(self, state, radius_t=1, q_t=None, lam=0):
         if q_t == None:
             q_t = np.ones((self._p+self._T))
-        self._xs[self._t] = state # add it to the list
+        self._xs[self._t, :] = state[0] # add it to the list
         return self.controlAlgo(radius_t, q_t, lam)
