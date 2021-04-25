@@ -39,14 +39,15 @@ class optimROBD(object):
         prevFunc = self.hittingCost(prevH, v_tminus)
 
         # building out the yhat sequence
-        self._yhats[t-1, :] = self.robdSub(prevFunc, t-1)
+        self._yhats[t-1, :] = self.robdSub(prevFunc, t-1, v_tminus)
 
+        print("double min")
         vtilde = self.findSetMin(self.doubleFunc(h_t, t), omega_t)
 
         fhatFunc = self.hittingCost(h_t, vtilde)
         self._prevH = h_t
 
-        y_t = self.robdSub(fhatFunc, t)
+        y_t = self.robdSub(fhatFunc, t, vtilde)
 
         return y_t
 
@@ -55,7 +56,8 @@ class optimROBD(object):
         def func(params):
             y = params[:self._d]
             v = params[self._d:]
-            return h_t(y - v) + self._lam * self.cost(t)(y)
+            val = h_t(y - v) + self._lam * self.cost(t)(y)
+            return val
         return func
     
     #TODO: change if necessary
@@ -80,7 +82,9 @@ class optimROBD(object):
         result = minimize(function, x0, method = 'SLSQP', constraints=cons)
         '''
 
-        result = minimize(function, x0, method = 'COBYLA')
+        print("scipy minimize")
+        result = minimize(function, x0, method='Nelder-Mead')
+        
         if result.success:
             fitted_params = np.array(result.x[1]) #want to return v?
             return fitted_params
@@ -97,8 +101,10 @@ class optimROBD(object):
     ''' End to implement here'''
 
     # subroutine for ROBD and optimistic ROBD
-    def robdSub(self, fun, t):
+    def robdSub(self, fun, t, v_tminus):
         vel = self._findMin(fun)
+        print("scipy val: " + str(vel))
+        print("numerical val: " + str(v_tminus))
 
         # below line: find minimum of entire expression with respect to y
         out = self._findMin(self.totalCost(fun, vel, t))

@@ -108,6 +108,7 @@ class Mem(Agent):
         #TODO: add a default value for v_tminus: what happens when t = 0??
 
         ''' changed here to single call '''
+        
         assert self._t < self._T
         if self._t > 0:
             subValue = self._xs[self._t]-np.matmul(self._A, self._xs[self._t - 1])-np.matmul(self._B, self._us[self._t-1])
@@ -118,6 +119,7 @@ class Mem(Agent):
 
             omega = self.getOmega()
 
+            print("solver step")
             # TODO: change the parameters of solver
             self._ys[self._t] = solver.step(v_tminus, func, omega, radius_t, self._t)
 
@@ -159,8 +161,8 @@ class Mem(Agent):
         return self._ys[self._t] - lsum
     
     # takes in state, disturbance radius, qs, lambda
-    def __call__(self, state, radius_t=1, q_t=None, lam=0):
-        if q_t == None:
+    def __call__(self, state, radius_t=1, q_t=-1, lam=0):
+        if q_t == -1:
             q_t = np.ones((self._p+self._T))
         self._xs[self._t, :] = state[0] # add it to the list
         return self.controlAlgo(radius_t, q_t, lam)
