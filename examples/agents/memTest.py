@@ -26,18 +26,19 @@ def get_errs(T, controller, A, B, noise):
     actions = np.zeros((T,m))
     
     for i in tqdm(range(1, T)):
+        print("action: ")
         print(actions[i-1])
         print("state: ")
         print(states[i-1])
-        try:
-            actions[i] = controller(states[i-1], A, B, lam = 2)
-        except:
-            actions[i] = controller(states[i-1], lam = 2)
-            
-        if(noise=="normal"):
-            states[i] = A @ states[i-1] + B @ (actions[i] + np.array(np.random.normal(0, 0.2, size=(m,1)))[0]) # gaussian noise
+
+        if (noise == "normal"):
+            w_t = np.random.normal(0, 0.2, size=(m,1))[0]
         else:
-            states[i] = A @ states[i-1] + B @ (action[i] + np.random.normal(0, 0.2, size=(m,1)) *(i%300 < 150) + 0.4 * jnp.sin(i) *(i%300>= 150)) # add sine noise every 150 steps
+            w_t = np.random.normal(0, 0.2, size=(m,1)) *(i%300 < 150) + 0.4 * jnp.sin(i) *(i%300>= 150)
+
+        actions[i] = controller(states[i-1], w = w_t, lam = 0)
+            
+        states[i] = A @ states[i-1] + B @ (actions[i-1] + np.array(w_t)) # gaussian noise
         
         if(i % T//2 == 0): # switch system
             A,B = np.array([[1.,1.5], [0,1.]]), np.array([[0],[0.9]])
@@ -46,7 +47,7 @@ def get_errs(T, controller, A, B, noise):
     
     return states, errs, actions
 
-T = 1000
+T = 20
 
 A,B = np.array([[1.,.5], [0,1.]]), np.array([[0],[1.2]])
 
@@ -67,7 +68,7 @@ print("Memory incurs ", np.mean(mem_errs), " loss under gaussian iid noise")
 # print("AdaGPC incurs ", np.mean(ada_errs), " loss under gaussian iid noise")
 
 plt.title("Cumulative mean losses under gaussian iid noise")
-#plt.plot(cummean(gpc_errs), "green", label = "GPC")
+# plt.plot(cummean(gpc_errs), "green", label = "GPC")
 #plt.plot(cummean(ada_errs), "blue", label = "AdaGPC")
 plt.plot(cummean(mem_errs), "red", label = "MemCR")
 plt.legend()
@@ -75,7 +76,7 @@ plt.savefig('gaussianLoss.png')
 plt.clf()
 
 plt.title("Instantaneous actions under gaussian noise")
-#plt.plot(g_acts, "green", label = "GPC")
+# plt.plot(g_acts, "green", label = "GPC")
 #plt.plot(a_acts, "blue", label = "AdaGPC")
 plt.plot(m_acts, "red", label = "MemCR")
 plt.legend()
@@ -83,7 +84,7 @@ plt.savefig('gaussianAction.png')
 plt.clf()
 
 plt.title("Instantaneous states under gaussian noise")
-#plt.plot(gpc_state, "green", label = "GPC")
+# plt.plot(gpc_state, "green", label = "GPC")
 #plt.plot(ada_errs, "blue", label = "AdaGPC")
 plt.plot(mem_state, "red", label = "Mem")
 plt.legend()

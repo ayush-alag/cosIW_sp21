@@ -100,10 +100,10 @@ class Mem(Agent):
 
     # TODO: should update self._t internally
     # TODO: should send the actual derivative to optimROBD
-    def controlAlgo(self, radius_t, qs, lam):
+    def controlAlgo(self, w_t, radius_t, qs, lam):
         func = self.hitFunc(qs)
 
-        solver = optimROBD(self._Cs, self._p, self._T, self._d, func, self._n, lam)
+        solver = optimROBD(self._Cs, self._p, self._T, self._d, func, self._n, self._ps, lam)
 
         #TODO: add a default value for v_tminus: what happens when t = 0??
 
@@ -113,14 +113,15 @@ class Mem(Agent):
         if self._t > 0:
             subValue = self._xs[self._t]-np.matmul(self._A, self._xs[self._t - 1])-np.matmul(self._B, self._us[self._t-1])
             w_tminus = subValue[self._ks]
+            print("wt: " + str(w_tminus))
 
             self._etas[self._t-1] = w_tminus + self.etaMult()
             v_tminus = -1 * self._etas[self._t-1]
+            print("v_tminus: " + str(v_tminus)) 
 
-            omega = self.getOmega()
+            omega = -w_t + self.getOmega()
+            print("omega: " + str(omega))
 
-            print("solver step")
-            # TODO: change the parameters of solver
             self._ys[self._t] = solver.step(v_tminus, func, omega, radius_t, self._t)
 
         self._us[self._t] = self.getOuts()
@@ -141,6 +142,7 @@ class Mem(Agent):
 
     # for multiplying the zetas
     def etaMult(self):
+        print(self._etas)
         summ = 0
         for idx, C in enumerate(self._Cs):
             if self._t-2-idx >= 0: 
@@ -157,12 +159,13 @@ class Mem(Agent):
     def getOuts(self):
         lsum = 0
         for idx, C in enumerate(self._Cs):
-            lsum += np.matmul(C, self._ys[self._t-idx-1])
+            if self._t-1-idx >= 0: 
+                lsum += np.matmul(C, self._ys[self._t-idx-1])
         return self._ys[self._t] - lsum
     
     # takes in state, disturbance radius, qs, lambda
-    def __call__(self, state, radius_t=1, q_t=-1, lam=0):
-        if q_t == -1:
+    def __call__(self, state, w = 0, radius_t=1, qs = False, q_t = 0, lam=0):
+        if qs == False:
             q_t = np.ones((self._p+self._T))
-        self._xs[self._t, :] = state[0] # add it to the list
-        return self.controlAlgo(radius_t, q_t, lam)
+        self._xs[self._t] = state[0] # add it to the list
+        return self.controlAlgo(w, radius_t, q_t, lam)

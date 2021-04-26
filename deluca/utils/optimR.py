@@ -18,17 +18,22 @@ class optimROBD(object):
     2) how do we do the projection using scipy?
     '''
 
-    def __init__(self, Cs, p, T, d, prevH, n, lam=0):
+    def __init__(self, Cs, p, T, d, prevH, n, ps, lam=0):
         self._lam = lam
         self._l1 = lam
         self._l2 = 0
         self._Cs = np.array(Cs)
+        lsum = 0
+        for C in Cs:
+            lsum += np.linalg.norm(C)
+        print("alpha: " + str(lsum))
         self._p = p
         self._T = T
         self._prevH = prevH
-        self._yhats = np.ndarray((T, d))
+        self._yhats = np.zeros((T, d))
         self._d = d
         self._n = n
+        self._ps = ps
 
     # does a specific instance of oROBD
     # h_t comes from the control algorithm
@@ -42,7 +47,9 @@ class optimROBD(object):
         self._yhats[t-1, :] = self.robdSub(prevFunc, t-1, v_tminus)
 
         print("double min")
-        vtilde = self.findSetMin(self.doubleFunc(h_t, t), omega_t)
+        vtilde = self.findSetMin(self.doubleFunc(h_t, t), omega_t, radius_t)
+        # vtilde = omega_t
+        print(vtilde)
 
         fhatFunc = self.hittingCost(h_t, vtilde)
         self._prevH = h_t
@@ -59,62 +66,63 @@ class optimROBD(object):
             val = h_t(y - v) + self._lam * self.cost(t)(y)
             return val
         return func
-    
-    #TODO: change if necessary
-    def constraint(self, omega_t):
-        def func(params):
-            y = params[:self._d]
-            v = params[self._d:]
-            if tuple(v) in omega_t:
-                return 0
-            return 1 #return a non-zero element
-        return func
-
-    ''' To implement from here '''  
 
     #TODO: incorporate projection
-    def findSetMin(self, function, omega_t):
+    def findSetMin(self, function, omega_t, radius_t):
         x0 = (np.random.randn(self._d), np.random.randn(self._d))
         # constraint: must be in the set omega_t
-        '''
-        cons = ({'type': 'eq', 'fun': self.constraint(omega_t)})
 
-        result = minimize(function, x0, method = 'SLSQP', constraints=cons)
-        '''
-
-        print("scipy minimize")
         result = minimize(function, x0, method='Nelder-Mead')
         
         if result.success:
             fitted_params = np.array(result.x[1]) #want to return v?
-            return fitted_params
+            diff = fitted_params - omega_t
+            norm = np.linalg.norm(diff)
+            q = (radius_t/norm)*diff
+            final = q + omega_t
+            return final
         else:
             raise ValueError(result.message)
     
+    '''
+    no longer necessary
+
     # Find the d x 1 vector y that minimizes the function parameter
     # TODO: change to convex optimizer
     def _findMin(self, func):
         x0 = np.random.rand(self._d)
         res = minimize(func, x0, method='BFGS', options={'disp':False})
         return np.array(res.x)
-
-    ''' End to implement here'''
-
-    # subroutine for ROBD and optimistic ROBD
-    def robdSub(self, fun, t, v_tminus):
-        vel = self._findMin(fun)
-        print("scipy val: " + str(vel))
-        print("numerical val: " + str(v_tminus))
-
-        # below line: find minimum of entire expression with respect to y
-        out = self._findMin(self.totalCost(fun, vel, t))
-        return out
-    
+        
     # precondition: v_t must be a numpy array
     def totalCost(self, fun, v_t, t):
         def func(y):
             return fun(y) + self._l1 * self.cost(t)(y) + self._l2 * self.dist(v_t)(y)
         return func
+
+    '''
+
+    # subroutine for ROBD and optimistic ROBD
+    def robdSub(self, fun, t, v_tminus):
+        vel = v_tminus
+        # print("scipy val: " + str(self._findMin(fun)))
+        # print("numerical val: " + str(vel))
+
+        # below line: find minimum of entire expression with respect to y
+        # print("scipy val 2: " + str(self._findMin(self.totalCost(fun, vel, t))))
+
+        if self._l1 == 0:
+            val = vel
+        else:
+            lsum = 0
+            for i in range (1, self._p+1):
+                addVal = self._Cs[i-1] @ self._yhats[t - i]
+                lsum += addVal
+            
+            val = (self._l1 * lsum + np.multiply(self._ps, vel)) / (self._l1 + self._ps)
+
+        # print("numerical val 2: " + str(val))
+        return val
     
     #precondition: yhats, Cs must be numpy arrays
     def cost(self, t):
@@ -122,10 +130,9 @@ class optimROBD(object):
             Cs = self._Cs
 
             summ = np.zeros(self._d)
-            for i in range(self._p):
-                if t - i > 0:
-                    C = Cs[i]
-                    summ += np.matmul(C, self._yhats[t-i-1].T) #TODO: check
+            for idx, C in enumerate(self._Cs):
+                if t - idx > 0:
+                    summ += np.matmul(C, self._yhats[t-idx-1].T)
             norm = np.linalg.norm(y - summ)
             return (norm**2)/2
         return func

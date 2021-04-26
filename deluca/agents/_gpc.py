@@ -122,7 +122,7 @@ class GPC(Agent):
         self.policy_loss = policy_loss
         self.grad = jit(grad(policy_loss, (0, 1)))
 
-    def __call__(self, state: jnp.ndarray) -> jnp.ndarray:
+    def __call__(self, state: jnp.ndarray, w, lam) -> jnp.ndarray:
         """
         Description: Return the action based on current state and internal parameters.
 
