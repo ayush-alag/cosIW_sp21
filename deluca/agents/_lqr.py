@@ -52,7 +52,7 @@ class LQR(Agent):
         # compute LQR gain
         self.K = jnp.linalg.inv(B.T @ X @ B + R) @ (B.T @ X @ A)
 
-    def __call__(self, state) -> jnp.ndarray:
+    def __call__(self, state, w=0, lam=0) -> jnp.ndarray:
         """
         Description: Return the action based on current state and internal parameters.
 

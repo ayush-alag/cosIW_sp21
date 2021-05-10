@@ -110,7 +110,7 @@ class Adaptive(Agent):
         self.policy_loss = policy_loss
 
 
-      def __call__(self, x, A, B):
+      def __call__(self, x, A, B, w=0, lam=0):
 
         play_i = np.argmax(self.weights)
         self.u = self.learners[play_i].get_action(x)

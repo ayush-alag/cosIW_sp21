@@ -65,11 +65,17 @@ class Mem(Agent):
         # used in the computation, set to 0's
         self._etas = np.zeros((self._T, self._d))
         self._ys = np.zeros((self._T, self._d))
+        
 
         ''' starting the processes '''
         self.idx()        # creates ks,d
         self.defineP()    # creates ps, p
         self.defineCs()   # creates Cs
+        
+        print(self._Cs)
+        print(self._ps)
+        # instantiate the solver
+        self._solver = optimROBD(self._Cs, self._p, self._T, self._d, self._n, self._ps)
 
     def idx(self):
         self._ks = np.where((self._B).any(axis=1))[0]
@@ -87,8 +93,8 @@ class Mem(Agent):
     def defineCs(self):
         Cs = np.ndarray((self._p, self._d, self._d))
 
+        a_identity = self._A[self._ks, :] #check slicing
         for i in range(1, self._p+1):
-            a_identity = self._A[self._ks, :] #check slicing
             C = np.ndarray((self._d, self._d))
             for j in range(1, self._d+1):
                 if i-1 <= self._ps[j-1]:
@@ -98,19 +104,16 @@ class Mem(Agent):
             Cs[i-1] = C
         self._Cs = Cs
 
-    # TODO: should update self._t internally
-    # TODO: should send the actual derivative to optimROBD
     def controlAlgo(self, w_t, radius_t, qs, lam):
-        func = self.hitFunc(qs)
-
-        solver = optimROBD(self._Cs, self._p, self._T, self._d, func, self._n, self._ps, lam)
-
-        #TODO: add a default value for v_tminus: what happens when t = 0??
+        func = self.hitFunc(qs) #TODO: not really necessary as we're assuming it's a certain type in solver
 
         ''' changed here to single call '''
         
         assert self._t < self._T
         if self._t > 0:
+            print(self._xs[self._t])
+            print(self._xs[self._t-1])
+            print(self._us[self._t - 1])
             subValue = self._xs[self._t]-np.matmul(self._A, self._xs[self._t - 1])-np.matmul(self._B, self._us[self._t-1])
             w_tminus = subValue[self._ks]
             print("wt: " + str(w_tminus))
@@ -119,12 +122,13 @@ class Mem(Agent):
             v_tminus = -1 * self._etas[self._t-1]
             print("v_tminus: " + str(v_tminus)) 
 
-            omega = -w_t + self.getOmega()
+            omega = -w_t - self.getOmega()
             print("omega: " + str(omega))
 
-            self._ys[self._t] = solver.step(v_tminus, func, omega, radius_t, self._t)
+            self._ys[self._t] = self._solver.step(v_tminus, func, omega, radius_t, self._t, lam)
 
         self._us[self._t] = self.getOuts()
+        print("u_t: " + str(self._us[self._t]))
 
         self._t += 1
         return self._us[self._t-1]
@@ -140,9 +144,10 @@ class Mem(Agent):
             return masterSum/2
         return func
 
+    ''' Todo (stretch): combine these methods into one super method to avoid duplicate errors '''
+    
     # for multiplying the zetas
     def etaMult(self):
-        print(self._etas)
         summ = 0
         for idx, C in enumerate(self._Cs):
             if self._t-2-idx >= 0: 
@@ -154,7 +159,7 @@ class Mem(Agent):
         for idx, C in enumerate(self._Cs):
             if self._t-1-idx >= 0: 
                 summ += np.matmul(C, self._etas[self._t-1-idx])
-        return -1 * summ
+        return summ
 
     def getOuts(self):
         lsum = 0
@@ -163,7 +168,7 @@ class Mem(Agent):
                 lsum += np.matmul(C, self._ys[self._t-idx-1])
         return self._ys[self._t] - lsum
     
-    # takes in state, disturbance radius, qs, lambda
+    # takes in state, disturbance, disturbance radius, qs, lambda
     def __call__(self, state, w = 0, radius_t=1, qs = False, q_t = 0, lam=0):
         if qs == False:
             q_t = np.ones((self._p+self._T))

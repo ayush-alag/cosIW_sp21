@@ -5,6 +5,7 @@ from jax import grad
 from jax import jit
 #import cvxopt # TODO: speed up via convex approach
 from scipy.optimize import minimize
+import random
 
 ''' How to use:
 1) instantiate and pass the first h_0 function during control Alg 3
@@ -13,15 +14,7 @@ from scipy.optimize import minimize
 
 class optimROBD(object):
 
-    ''' TODOS: 
-    1) what is prevH_0? Answer: must create when sending it in
-    2) how do we do the projection using scipy?
-    '''
-
-    def __init__(self, Cs, p, T, d, prevH, n, ps, lam=0):
-        self._lam = lam
-        self._l1 = lam
-        self._l2 = 0
+    def __init__(self, Cs, p, T, d, n, ps):
         self._Cs = np.array(Cs)
         lsum = 0
         for C in Cs:
@@ -29,33 +22,40 @@ class optimROBD(object):
         print("alpha: " + str(lsum))
         self._p = p
         self._T = T
-        self._prevH = prevH
         self._yhats = np.zeros((T, d))
         self._d = d
         self._n = n
         self._ps = ps
 
-    # does a specific instance of oROBD
     # h_t comes from the control algorithm
-    def step(self, v_tminus, h_t, omega_t, radius_t, t):
-        prevH = self._prevH
+    def step(self, v_tminus, h_t, omega_t, radius_t, t, lam):
+        '''
+        for the more general case of an arbitrary function. not needed because we know the function 
+        
+#         prevH = self._prevH
 
-        # returns a function of y
-        prevFunc = self.hittingCost(prevH, v_tminus)
+#         # returns a function of y
+#         prevFunc = self.hittingCost(prevH, v_tminus)
 
         # building out the yhat sequence
-        self._yhats[t-1, :] = self.robdSub(prevFunc, t-1, v_tminus)
+        #self._yhats[t-1, :] = self.robdSub(prevFunc, t-1, v_tminus)
+        
+        '''
+        
+        self._lam = lam
+        self._yhats[t-1, :] = self.robdSub(t-1, v_tminus)
+        print("yhat: " + str(self._yhats[t-1, :]))
 
-        print("double min")
-        vtilde = self.findSetMin(self.doubleFunc(h_t, t), omega_t, radius_t)
-        # vtilde = omega_t
-        print(vtilde)
+#         print("double min")
+        vtilde = self.findSetMin(self.doubleFunc(h_t, t), omega_t, radius_t, v_tminus)
+#         print(vtilde)
+        print("vtilde: " + str(vtilde))
 
-        fhatFunc = self.hittingCost(h_t, vtilde)
-        self._prevH = h_t
+#         fhatFunc = self.hittingCost(h_t, vtilde)
+#         self._prevH = h_t
 
-        y_t = self.robdSub(fhatFunc, t, vtilde)
-
+        y_t = self.robdSub(t, vtilde)
+        print("y_t: " + str(y_t))
         return y_t
 
     #TODO: change if necessary
@@ -68,19 +68,27 @@ class optimROBD(object):
         return func
 
     #TODO: incorporate projection
-    def findSetMin(self, function, omega_t, radius_t):
-        x0 = (np.random.randn(self._d), np.random.randn(self._d))
-        # constraint: must be in the set omega_t
+    def findSetMin(self, function, omega_t, radius_t, v_tminus):
+        return omega_t
+        x0 = (v_tminus+np.random.randn(self._d), v_tminus+np.random.randn(self._d))
 
         result = minimize(function, x0, method='Nelder-Mead')
-        
+
         if result.success:
             fitted_params = np.array(result.x[1]) #want to return v?
+            print("fitted: " + str(fitted_params))
+            print("omega: " + str(omega_t))
             diff = fitted_params - omega_t
             norm = np.linalg.norm(diff)
-            q = (radius_t/norm)*diff
+            
+            if norm != 0:
+                q = (radius_t/norm)*diff
+            else:
+                q = 0
+                
             final = q + omega_t
-            return final
+            return -1*final # projected answer
+            #return omega_t
         else:
             raise ValueError(result.message)
     
@@ -103,23 +111,23 @@ class optimROBD(object):
     '''
 
     # subroutine for ROBD and optimistic ROBD
-    def robdSub(self, fun, t, v_tminus):
+    def robdSub(self, t, v_tminus):
         vel = v_tminus
+        print(self._ps)
         # print("scipy val: " + str(self._findMin(fun)))
         # print("numerical val: " + str(vel))
 
         # below line: find minimum of entire expression with respect to y
         # print("scipy val 2: " + str(self._findMin(self.totalCost(fun, vel, t))))
 
-        if self._l1 == 0:
+        if self._lam == 0:
             val = vel
         else:
             lsum = 0
             for i in range (1, self._p+1):
-                addVal = self._Cs[i-1] @ self._yhats[t - i]
-                lsum += addVal
+                lsum += self._Cs[i-1] @ self._yhats[t - i]
             
-            val = (self._l1 * lsum + np.multiply(self._ps, vel)) / (self._l1 + self._ps)
+            val = (self._lam * lsum + np.multiply(self._ps, vel)) / (self._lam + self._ps)
 
         # print("numerical val 2: " + str(val))
         return val
@@ -127,21 +135,22 @@ class optimROBD(object):
     #precondition: yhats, Cs must be numpy arrays
     def cost(self, t):
         def func (y):
-            Cs = self._Cs
-
             summ = np.zeros(self._d)
             for idx, C in enumerate(self._Cs):
                 if t - idx > 0:
-                    summ += np.matmul(C, self._yhats[t-idx-1].T)
+                    summ += np.matmul(C, self._yhats[t-idx-1])
             norm = np.linalg.norm(y - summ)
             return (norm**2)/2
         return func
 
+    ''' 
+    not needed since lambda_2 = 0
     def dist(self, v_t):
         def func(y):
             norm = np.linalg.norm(y-v_t)
             return (norm**2)/2
         return func
+    '''
 
     # must be numpy arrays
     def hittingCost(self, h, v_t):
