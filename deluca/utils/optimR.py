@@ -69,28 +69,31 @@ class optimROBD(object):
 
     #TODO: incorporate projection
     def findSetMin(self, function, omega_t, radius_t, v_tminus):
-        return omega_t
-        x0 = (v_tminus+np.random.randn(self._d), v_tminus+np.random.randn(self._d))
-
-        result = minimize(function, x0, method='Nelder-Mead')
-
-        if result.success:
-            fitted_params = np.array(result.x[1]) #want to return v?
-            print("fitted: " + str(fitted_params))
-            print("omega: " + str(omega_t))
-            diff = fitted_params - omega_t
-            norm = np.linalg.norm(diff)
-            
-            if norm != 0:
-                q = (radius_t/norm)*diff
-            else:
-                q = 0
-                
-            final = q + omega_t
-            return -1*final # projected answer
-            #return omega_t
+        if self._lam ==. 0:
+            return omega_t
         else:
-            raise ValueError(result.message)
+#         return omega_t
+            x0 = (v_tminus+np.random.randn(self._d), v_tminus+np.random.randn(self._d))
+
+            result = minimize(function, x0, method='Nelder-Mead')
+
+            if result.success:
+                fitted_params = np.array(result.x[self._d:]) #want to return v?
+                print("fitted: " + str(fitted_params))
+                print("omega: " + str(omega_t))
+                diff = fitted_params - omega_t
+                norm = np.linalg.norm(diff)
+
+                if norm != 0:
+                    q = (radius_t/norm)*diff
+                else:
+                    q = 0
+
+                final = q + omega_t
+                return -1*final # projected answer
+                #return omega_t
+            else:
+                raise ValueError(result.message)
     
     '''
     no longer necessary

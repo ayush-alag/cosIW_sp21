@@ -4,8 +4,8 @@ nb_dir = os.path.split(os.getcwd())[0]
 if nb_dir not in sys.path:
     sys.path.append(nb_dir)
 print(sys.path)
-sys.path.append('/Users/ayushalag/Documents/cosIW/cosIW_sp21/')
-os.chdir('/Users/ayushalag/Documents/cosIW/cosIW_sp21/')
+sys.path.append('/Users/shray/Documents/cosIW/cosIW_sp21/')
+os.chdir('/Users/shray/Documents/cosIW/cosIW_sp21/')
 print(os.getcwd())
 
 from deluca.agents import GPC, Adaptive, Mem, PID, LQR
@@ -15,7 +15,7 @@ import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
-cummean = lambda x: np.cumsum(x)/(np.ones(T) + np.arange(T))
+cummean = lambda x: np.cumsum(x)/(np.ones(T-1) + np.arange(T-1))
 n, m = 5,3
 
 np.seterr('raise')
@@ -31,11 +31,11 @@ def run_loop(T, controller, A, B, noise):
 
 def get_errs(T, controller, A, B, noise): 
     states = np.zeros((T, n))
-    errs = np.zeros((T, 1))
-    actions = np.zeros((T,m))
-    dists = np.zeros((T, m))
+    errs = np.zeros((T-1, 1))
+    actions = np.zeros((T-1,m))
+    dists = np.zeros((T-1, m))
 
-    for i in tqdm(range(1, T)):
+    for i in tqdm(range(0, T-1)):
         print("\ni: " + str(i) + "\n")
 #         print("action: ")
 #         print(actions[i-1])
@@ -43,32 +43,34 @@ def get_errs(T, controller, A, B, noise):
 #         print(states[i-1])
 
         if (noise == "normal"):
-            w_t = np.random.normal(0, 0.2, size=(m,1))
+            w_t = np.random.normal(0, 0.2, size=(m,))
         elif (noise == "none"):
-            w_t = np.zeros((m,1))
+            w_t = np.zeros((m,))
         else:
-            w_t = np.random.normal(0, 0.2, size=(m,1)) *(i%50 < 25) + 0.4 * np.sin(i) *(i%50>= 25)
-        
-        dists[i] = w_t[0]
+            w_t = np.random.normal(0, 0.2, size=(m,)) * (i%50 < 25) + 0.4 * np.sin(i) *(i%50>= 25)
+
+        dists[i] = w_t
 
         try:
-            actions[i] = controller(states[i-1], A, B, w=dists[i-1], lam=0)
+            actions[i] = controller(states[i], A, B, w=dists[i], lam=0)
         except:
-            print("prevState: " + str(states[i-1]))
-            print("noise: " + str(dists[i-1]))
-            actions[i] = controller(states[i-1], w = dists[i-1], lam = 0)
+            print("state: " + str(states[i]))
+            print("noise: " + str(dists[i]))
+            actions[i] = controller(states[i], w = dists[i], lam = 0)
             print("action: " + str(actions[i]))
 
-        a_part = A@states[i-1]
-        b_part = np.ndarray.flatten(B @ (actions[i] + dists[i-1]))
-        states[i] += a_part
-        states[i] += b_part
-        print("state: " + str(states[i]))
+        a_part = A@states[i]
+        b_part = np.ndarray.flatten(B @ (actions[i] + dists[i]))
+        print("a part: " + str(a_part))
+        print("b part: " + str(b_part))
+        states[i+1] += a_part
+        states[i+1] += b_part
+        print("next state: " + str(states[i+1]))
 
 #         if(i % T//2 == 0): # switch system
 #             A,B = np.array([[1.,1.5], [0,1.]]), np.array([[0],[0.9]])
 
-        errs[i] = (np.linalg.norm(states[i])+np.linalg.norm(actions[i]))
+        errs[i] = 0.5*(np.linalg.norm(states[i])+ 0.5*np.linalg.norm(actions[i]))
 
     return states, errs, actions
 

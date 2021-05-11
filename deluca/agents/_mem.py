@@ -164,8 +164,8 @@ class Mem(Agent):
     def getOuts(self):
         lsum = 0
         for idx, C in enumerate(self._Cs):
-            if self._t-1-idx >= 0: 
-                lsum += np.matmul(C, self._ys[self._t-idx-1])
+            if self._t-idx >= 0: 
+                lsum += np.matmul(C, self._ys[self._t-1-idx])
         return self._ys[self._t] - lsum
     
     # takes in state, disturbance, disturbance radius, qs, lambda
