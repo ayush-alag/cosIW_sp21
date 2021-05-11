@@ -69,7 +69,7 @@ class optimROBD(object):
 
     #TODO: incorporate projection
     def findSetMin(self, function, omega_t, radius_t, v_tminus):
-        if self._lam ==. 0:
+        if self._lam == 0:
             return omega_t
         else:
 #         return omega_t
